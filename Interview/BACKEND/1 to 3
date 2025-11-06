@@ -1,0 +1,362 @@
+awesome questions! i’ll break them into three parts. for each: a clear explanation, practical code, a small diagram, and a few factual + scenario-based questions you can use for interview prep.
+
+---
+
+# 1) GET vs POST (HTTP)
+
+**In one line:**
+
+* **GET** requests *read* data. They’re **safe** and **idempotent** (don’t change server state).
+* **POST** requests *send* data to create/trigger something. They’re **not guaranteed idempotent** and typically change state.
+
+## Key differences (quick table)
+
+| Aspect                 | GET                                                  | POST                                    |
+| ---------------------- | ---------------------------------------------------- | --------------------------------------- |
+| Primary intent         | Retrieve a resource                                  | Create a resource / trigger processing  |
+| Body allowed           | Usually **no** (can, but uncommon & discouraged)     | **Yes** (JSON, form-data, files)        |
+| Caching                | Often cached by browsers/proxies                     | Usually not cached by default           |
+| Bookmarkable/shareable | Yes (params in URL)                                  | No (data in body)                       |
+| Idempotent             | **Yes** (repeating same GET should not change state) | **No** (may create multiple resources)  |
+| Visible data           | Query string in URL (logs/history)                   | Request body (less visible in URL/logs) |
+| Typical usage          | Search, list, read                                   | Create, submit forms, uploads           |
+
+> Note on URL length: HTTP doesn’t define a hard maximum, but **browsers/servers impose practical limits**. Keep GET query strings lean; use POST for large/complex payloads.
+
+## Minimal examples
+
+### a) Using `curl`
+
+```bash
+# GET: read products
+curl -i "https://api.example.com/products?category=books&limit=10"
+
+# POST: create a product (JSON body)
+curl -i -X POST "https://api.example.com/products" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Clean Architecture","price":29.99}'
+```
+
+### b) Browser fetch (GET vs POST)
+
+```js
+// GET: search
+fetch('/api/search?q=wireless+mouse')
+  .then(r => r.json()).then(console.log);
+
+// POST: create
+fetch('/api/orders', {
+  method: 'POST',
+  headers: {'Content-Type':'application/json'},
+  body: JSON.stringify({ items:[{sku:'MOU123', qty:1}] })
+}).then(r => r.json()).then(console.log);
+```
+
+### c) Tiny Node/Express server showing both
+
+```js
+import express from 'express';
+const app = express();
+app.use(express.json());
+
+// GET is for reading
+app.get('/api/products', (req, res) => {
+  const { category, limit = 10 } = req.query;
+  res.json({ category, limit: Number(limit), items: [] });
+});
+
+// POST is for creating
+app.post('/api/products', (req, res) => {
+  const product = { id: 101, ...req.body };
+  res.status(201).json(product); // 201 Created
+});
+
+app.listen(3000, () => console.log('http://localhost:3000'));
+```
+
+## Quick diagram (when to use GET vs POST)
+
+```mermaid
+flowchart LR
+A[Client] -- GET /items --> B[Server]
+B -- Returns list (200) --> A
+
+C[Client] -- POST /items {newItem} --> D[Server]
+D -- Creates & returns created item (201) --> C
+```
+
+## Factual + Scenario Questions
+
+**Factual**
+
+1. Which HTTP methods are defined as **safe** and/or **idempotent** by RFC semantics?
+2. Why are GET requests more likely to be cached than POST?
+3. Is there an official HTTP limit on URL length? If not, what constrains it in practice?
+4. What status code is most appropriate after successfully creating a resource via POST?
+
+**Scenario**
+
+1. Your search page currently uses POST to submit filters. Users want to share links to filtered results. What change would you make and why?
+2. A webhook endpoint receives duplicate POSTs during retries. How would you make the operation effectively idempotent (e.g., idempotency keys)?
+3. You’re uploading a 10 MB JSON document. Would you choose GET or POST? Why, and what headers would you include?
+
+---
+
+# 2) What is a REST API? (simple terms)
+
+**In one line:**
+A **REST API** exposes your app’s **things** (called **resources**) over HTTP using **standard URLs**, **methods** (GET/POST/PUT/PATCH/DELETE), and **status codes**. The server doesn’t keep client session between calls (**stateless**). You send/receive representations (usually JSON).
+
+## Core ideas (plain language)
+
+* **Resources:** “Nouns” like `/users`, `/orders/123`, `/products/42/reviews`.
+* **Uniform methods:** Use HTTP verbs for meaning:
+
+  * `GET /orders/123` → read order 123
+  * `POST /orders` → create a new order
+  * `PUT /orders/123` → replace order 123
+  * `PATCH /orders/123` → partially update
+  * `DELETE /orders/123` → delete
+* **Stateless:** Every request carries its own auth and context (e.g., token in header).
+* **Representations:** JSON in/out; same resource can have multiple representations (JSON, CSV, etc.).
+* **HTTP status codes:** 200 OK, 201 Created, 400 Bad Request, 401 Unauthorized, 404 Not Found, 409 Conflict, 422 Unprocessable Entity, 500 Server Error, etc.
+* **Cacheable:** GET responses can be cached with `ETag`, `Cache-Control`.
+* **Discoverable (optional):** Include links to related actions (HATEOAS).
+
+## Example: a tiny RESTful “orders” API
+
+### a) Resource design
+
+```
+/orders            # collection
+/orders/{id}       # single resource
+/orders/{id}/items # nested
+```
+
+### b) Express server (REST-ish)
+
+```js
+import express from 'express';
+const app = express();
+app.use(express.json());
+
+const orders = new Map(); // mock db
+
+// List orders
+app.get('/orders', (req, res) => {
+  res.json([...orders.values()]);
+});
+
+// Read one
+app.get('/orders/:id', (req, res) => {
+  const o = orders.get(req.params.id);
+  if (!o) return res.status(404).json({error:'Not Found'});
+  res.json(o);
+});
+
+// Create
+app.post('/orders', (req, res) => {
+  const id = String(Date.now());
+  const order = { id, status:'NEW', ...req.body };
+  orders.set(id, order);
+  res.status(201).location(`/orders/${id}`).json(order);
+});
+
+// Update (replace)
+app.put('/orders/:id', (req, res) => {
+  if (!orders.has(req.params.id)) return res.status(404).end();
+  const replaced = { id:req.params.id, ...req.body };
+  orders.set(req.params.id, replaced);
+  res.json(replaced);
+});
+
+// Partial update
+app.patch('/orders/:id', (req, res) => {
+  const o = orders.get(req.params.id);
+  if (!o) return res.status(404).end();
+  Object.assign(o, req.body);
+  res.json(o);
+});
+
+// Delete
+app.delete('/orders/:id', (req, res) => {
+  orders.delete(req.params.id);
+  res.status(204).end();
+});
+
+app.listen(3000, () => console.log('REST on http://localhost:3000'));
+```
+
+### c) Client calls
+
+```bash
+# Create
+curl -i -X POST http://localhost:3000/orders \
+  -H "Content-Type: application/json" \
+  -d '{"customerId":"C-9","items":[{"sku":"KIT-01","qty":2}]}'
+
+# Read
+curl -i http://localhost:3000/orders
+
+# Partial update
+curl -i -X PATCH http://localhost:3000/orders/1730885230000 \
+  -H "Content-Type: application/json" \
+  -d '{"status":"PAID"}'
+```
+
+## Diagram: REST resource model + typical flows
+
+```mermaid
+flowchart TD
+A[Client] -->|GET /orders| B[(Orders Collection)]
+A -->|POST /orders {body}| B
+A -->|GET /orders/{id}| C[(Order Resource)]
+A -->|PATCH /orders/{id} {patch}| C
+A -->|DELETE /orders/{id}| C
+```
+
+## Factual + Scenario Questions
+
+**Factual**
+
+1. What does “stateless” mean in the context of REST, and why is it beneficial for scaling?
+2. Differentiate `PUT` vs `PATCH` with an example.
+3. Which headers enable caching of GET responses (name at least two)?
+4. Which status code should accompany a successful creation, and which header often points to the newly created resource?
+
+**Scenario**
+
+1. You need to version your API without breaking clients. Name two strategies and their trade-offs.
+2. An endpoint `POST /payments` might process a charge twice on retries. How do you design it to be idempotent?
+3. Your list endpoints are getting slow. What REST-friendly approaches can you add (pagination, filtering, sorting, sparse fieldsets, ETags)?
+
+---
+
+# 3) What is CORS and why is it needed?
+
+**In one line:**
+**CORS (Cross-Origin Resource Sharing)** is a browser security mechanism that lets a page from **Origin A** call APIs on **Origin B** *safely* when the server at B **explicitly opts in** using special response headers.
+
+## Why it exists
+
+Browsers enforce the **Same-Origin Policy** to prevent a malicious site from reading sensitive data from another site where you’re logged in. CORS is the server’s way to say “it’s okay for *that* origin to read my responses.”
+
+* **Origin** = `scheme + host + port` (e.g., `https://app.example.com:443`)
+* Without CORS, cross-origin `fetch`/XHR is **blocked** by the browser (for reading responses).
+
+## How it works (high level)
+
+1. Browser sends request with an `Origin` header.
+2. Server answers with **CORS headers** (e.g., `Access-Control-Allow-Origin`).
+3. For “non-simple” requests (e.g., custom headers, `PUT`, `PATCH`, `DELETE`, JSON with non-standard content type, or credentials), browser first sends a **preflight** `OPTIONS` request to check permissions.
+4. If allowed, browser sends the actual request.
+
+### Important headers
+
+* **Request:** `Origin`, `Access-Control-Request-Method`, `Access-Control-Request-Headers`
+* **Response (server decides):**
+
+  * `Access-Control-Allow-Origin: https://app.example.com` (or `*` for public, non-credentialed)
+  * `Access-Control-Allow-Methods: GET, POST, PUT`
+  * `Access-Control-Allow-Headers: Content-Type, Authorization`
+  * `Access-Control-Allow-Credentials: true` (only if you trust the origin; **cannot** be used with `*`)
+  * `Access-Control-Max-Age: 600` (cache preflight for 10 minutes)
+
+## Code: enabling CORS
+
+### a) Express with `cors` middleware (easiest)
+
+```js
+import express from 'express';
+import cors from 'cors';
+
+const app = express();
+
+app.use(cors({
+  origin: ['https://app.example.com', 'https://admin.example.com'],
+  methods: ['GET','POST','PUT','PATCH','DELETE'],
+  allowedHeaders: ['Content-Type','Authorization'],
+  credentials: true,           // allow cookies/Authorization header
+  maxAge: 600                  // cache preflights for 10 minutes
+}));
+
+app.get('/profile', (req, res) => {
+  res.json({ user:'jalaj', plan:'pro' });
+});
+
+app.listen(4000, () => console.log('API on http://localhost:4000'));
+```
+
+### b) Manual CORS (to understand under the hood)
+
+```js
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  const whitelist = new Set(['https://app.example.com','https://admin.example.com']);
+  if (origin && whitelist.has(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin'); // important for caches
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Max-Age', '600');
+  }
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+```
+
+### c) Browser request that needs preflight (custom header + credentials)
+
+```js
+fetch('https://api.example.com/report', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'X-Report-Format': 'detailed' // custom header => preflight
+  },
+  credentials: 'include', // send cookies
+  body: JSON.stringify({ month: '2025-10' })
+});
+```
+
+> **Security tips**
+>
+> * Do **not** use `Access-Control-Allow-Origin: *` with `Access-Control-Allow-Credentials: true` (forbidden by browsers).
+> * Prefer a whitelist of trusted origins and set `Vary: Origin`.
+> * Remember: CORS protects **browsers**. Server-to-server calls are unaffected by CORS.
+
+## Diagram: CORS preflight then actual request
+
+```mermaid
+sequenceDiagram
+participant B as Browser (https://app.example.com)
+participant S as API (https://api.example.com)
+
+B->>S: OPTIONS /report\nOrigin: https://app.example.com\nAccess-Control-Request-Method: POST\nAccess-Control-Request-Headers: Content-Type,X-Report-Format
+S-->>B: 204 No Content\nAccess-Control-Allow-Origin: https://app.example.com\nAccess-Control-Allow-Methods: POST\nAccess-Control-Allow-Headers: Content-Type,X-Report-Format\nAccess-Control-Max-Age: 600
+
+B->>S: POST /report (with body)\nOrigin: https://app.example.com
+S-->>B: 200 OK\nAccess-Control-Allow-Origin: https://app.example.com
+```
+
+## Factual + Scenario Questions
+
+**Factual**
+
+1. Define “origin” in the context of CORS. Which parts of a URL compose it?
+2. What triggers a CORS **preflight** request?
+3. Why can’t `Access-Control-Allow-Origin: *` be combined with `Access-Control-Allow-Credentials: true`?
+4. Name two response headers that help cache or vary CORS behavior correctly.
+
+**Scenario**
+
+1. Your SPA at `https://app.example.com` must call an API at `https://api.example.com` with cookies. Configure CORS safely.
+2. A third-party frontend needs read-only access to a public GET endpoint. You want zero credentials and CDN caching. What CORS headers do you return?
+3. You observe slow performance due to frequent preflights. How can you reduce them without weakening security?
+
+---
+
+## Want a printable cheat-sheet or a small runnable demo?
+
+I can package the above into a single repo (server + client) and a one-page PDF. Just say the word and your preferred stack (Node/Express, Python/FastAPI, or .NET).

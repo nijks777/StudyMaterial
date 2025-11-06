@@ -1,0 +1,173 @@
+Notes on Serialization and Deserialization
+1. Problem: The "Tower of Babel"
+Scenario: A client (e.g., a JavaScript-based React app) needs to send data to a server (e.g., a Rust-based web server).
+
+The Problem: These two systems speak different languages. A JavaScript Object is not the same as a Rust struct. They have different data types, memory representations, and rules (dynamic vs. strict/compiled).
+
+The Question: How can the Rust server possibly understand the data structure a JavaScript client sends over the network?
+
+2. 💡 The Solution: A Common Language
+The solution is to agree on a common, language-agnostic "standard format" that both the client and server can understand.
+
+This "standard" is just a set of rules for structuring data.
+
+The process looks like this:
+
+Client: The JavaScript app converts its native Object into this standard format (e.g., a JSON string).
+
+Transmission: This string is sent over the network (e.g., in an HTTP request body).
+
+Server: The Rust server receives this string and converts it into its own native struct.
+
+3. Definitions: Serialization & Deserialization
+Serialization: The process of converting a native, in-memory data structure (like a JS Object, Python dict, or Rust struct) into a standard format (like a string or byte stream) that can be easily transmitted over a network or stored in a file.
+
+Client -> Network = Serialization
+
+Deserialization: The reverse process. Converting the standard format back into a native, in-minds_memory data structure that the receiving application can understand and work with.
+
+Network -> Server = Deserialization
+
+This process happens in both directions (client-to-server and server-to-client).
+
+4. The Engineer's "Mental Model" (and the OSI Model)
+Network communication is complex, often described by the OSI model which has 7 layers (from Application down to Physical).
+
+The "Physical Layer": At the very bottom, data is just electrical signals or light pulses (0s and 1s) traveling over a wire.
+
+The "Application Layer": At the very top, this is where HTTP and our data formats (like JSON) live.
+
+Your Responsibility: As a backend engineer, you only need to worry about the Application Layer.
+
+The Mental Model:
+
+You serialize your data into a JSON string.
+
+You hand this string to the operating system (e.g., via an HTTP request).
+
+(Magic happens): The lower layers (which you can ignore) turn this string into packets, then bits, and send it.
+
+(More magic): The receiving server reassembles the bits back into your exact JSON string.
+
+The server deserializes that string.
+
+Key Takeaway: You don't need to know how the bits travel. You just need to trust that the string you send is the string the server receives, ready to be deserialized.
+
+5. Common Serialization Standards
+The video categorizes standards into two main types:
+
+Text-Based Formats (Human-Readable):
+
+JSON (JavaScript Object Notation): The most popular format for REST APIs. Easy for humans to read and for JavaScript to parse.
+
+XML (eXtensible Markup Language): Older, more verbose, uses tags. Still used in some enterprise systems (e.g., SOAP APIs).
+
+YAML (YAML Ain't Markup Language): Very human-readable, often used for configuration files (e.g., Docker Compose, Kubernetes).
+
+Binary Formats (Machine-Readable):
+
+These are not human-readable but are much more compact and faster to parse.
+
+Protobuf (Protocol Buffers): Google's standard, very popular for high-performance systems and gRPC.
+
+Avro: Another common binary format.
+
+This series focuses on JSON as it is the standard for the vast majority of HTTP/REST APIs.
+
+6. 📄 A Deep Dive into JSON
+Stands For: JavaScript Object Notation.
+
+Key Features: It's lightweight and human-readable.
+
+Rules:
+
+Objects: Data structures are wrapped in curly braces {}.
+
+Arrays: Lists are wrapped in square brackets [].
+
+Key-Value Pairs: Data is organized as key: value pairs, separated by commas.
+
+Keys: Keys MUST be strings and enclosed in double quotes (e.g., "name"). This is a common mistake; single quotes or un-quoted keys are not valid JSON.
+
+Values: A value can be one of 6 types:
+
+String (in double quotes)
+
+Number
+
+Boolean (true or false)
+
+Array ([])
+
+Another Object ({}) (allowing for nesting)
+
+null
+
+Example (from the video):
+
+JSON
+
+{
+  "id": 123,
+  "title": "My Book Title",
+  "author": "John Doe",
+  "address": {
+    "country": "India",
+    "phone_number": 123456
+  },
+  "tags": [
+    "fiction",
+    "sci-fi"
+  ],
+  "is_published": true
+}
+❓ 10 Key Interview Questions
+What is serialization, and why is it necessary?
+
+Answer: It's the process of converting an in-memory data structure (like a JS object) into a standard format (like a JSON string) for transmission or storage. It's necessary because different systems (like a client and server) are often written in different languages and need a "common language" to exchange data.
+
+What is the difference between serialization and deserialization?
+
+Answer: Serialization is converting from a native object to a standard string/format (to send). Deserialization is the reverse, converting from the standard string/format back into a native object (to use).
+
+What are the key rules for a valid JSON key?
+
+Answer: Keys in JSON must always be strings and must be enclosed in double quotes.
+
+What's the difference between a text-based and a binary serialization format?
+
+Answer: A text-based format like JSON or XML is human-readable, which is great for debugging. A binary format like Protobuf is not human-readable but is much more compact and faster for the computer to parse, making it ideal for high-performance systems.
+
+Why is JSON so popular for REST APIs?
+
+Answer: There are two main reasons: 1) It's human-readable and easy to debug. 2) It's "native" to JavaScript (it stands for JavaScript Object Notation), making it trivial for browsers and frontend applications to work with.
+
+Can you nest a JSON object inside another JSON object?
+
+Answer: Yes. One of the valid data types for a JSON value is another JSON object, which allows for complex, nested data structures.
+
+What's the difference between a JavaScript object and a JSON object?
+
+Answer: A JS object is an in-memory data structure that can contain functions, comments, and keys without quotes. JSON is a string representation of data based on a subset of object literal syntax. In JSON, keys must be in double quotes, and values like functions or undefined are not allowed.
+
+As a backend developer, do you need to worry about how JSON is converted to IP packets?
+
+Answer: No. That is handled by the lower layers of the OSI model (Transport, Network, etc.). As application developers, our "mental model" is that we are responsible for the Application Layer. We only need to serialize our data to a string and deserialize the string we receive.
+
+What data types are not supported in JSON?
+
+Answer: undefined, functions, dates (they are typically serialized as strings in ISO 8601 format), and comments.
+
+A client sends a POST request. Describe the flow of serialization and deserialization.
+
+Answer:
+
+The client takes its native data (e.g., a JS object from a form).
+
+It serializes this object into a JSON string.
+
+This string is placed in the HTTP request body and sent over the network.
+
+The server receives the request and reads the JSON string from the body.
+
+It deserializes the JSON string into its own native data structure (e.g., a Rust struct or Python dict) to be processed by the business logic.

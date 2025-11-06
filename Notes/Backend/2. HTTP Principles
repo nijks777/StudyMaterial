@@ -1,0 +1,230 @@
+Here is a more in-depth version of the notes, expanded with additional details and context, followed by 10 common interview questions based on this material.
+
+---
+
+### 🏛️ 1. Core HTTP Principles
+
+**A. Statelessness**
+* **Definition:** The server holds no memory of past requests. Each request is an isolated, independent transaction.
+* **Implication:** Every request must be **self-contained**. The client is responsible for maintaining "state" (like who the user is) and sending it with *every single request* that needs it.
+* **State Management Techniques:**
+    * **Cookies:** The server sends a `Set-Cookie` header (e.g., `session-id=abc123`). The browser automatically stores this and sends it back in a `Cookie` header on all future requests to that domain. This is how traditional sessions are maintained.
+    * **Tokens (e.g., JWT):** For APIs, the server sends an authentication token (like a JSON Web Token) after login. The client (e.g., mobile app) must manually store this token and include it in the `Authorization` header for all protected requests (e.g., `Authorization: Bearer <token>`).
+* **Benefits:**
+    * **Simplicity:** Servers don't need complex logic to store or retrieve session data.
+    * **Scalability:** A request can be sent to *any* server in a cluster, as no single server holds unique session data. This is perfect for load balancing.
+    * **Resilience:** If one server fails, the client can just resend the request to another server, and it will work perfectly.
+
+**B. Client-Server Model**
+* **Client:** Initiates requests (e.g., `GET /users/123`).
+* **Server:** Listens for and processes requests, then returns responses.
+* **Request-Response Cycle:** This is the fundamental model. Communication is always client-initiated. Technologies like **WebSockets** or **Server-Sent Events (SSE)** bend this rule to allow for server-pushed data, but they are different protocols that often *start* with an HTTP request (an "upgrade").
+
+---
+
+### 💻 2. HTTP & The Network Stack
+
+* **OSI Model:** HTTP is an **Application Layer (Layer 7)** protocol. It defines the *rules of the conversation* (methods, headers, status codes). It doesn't care *how* the data physically gets there.
+    
+* **Transport Protocol (Layer 4):** HTTP relies on a lower-level protocol to handle the actual data delivery.
+    * **TCP (Transmission Control Protocol):** Used by HTTP/1.0, 1.1, and 2.0. It is **reliable** and **connection-oriented**.
+        * **Reliable:** Guarantees that packets are delivered in the correct order and re-transmits any lost packets. This is achieved via a 3-way handshake and acknowledgment packets.
+    * **UDP (User Datagram Protocol):** Used by HTTP/3 (via QUIC). It is a "fire-and-forget" protocol.
+        * **Unreliable:** No guarantee of delivery or order. This makes it extremely fast. **QUIC** (Quick UDP Internet Connections) implements reliability *on top* of UDP at the application level, solving many of TCP's problems.
+
+---
+
+### 🔄 3. Evolution of HTTP
+
+* **HTTP/1.0:** New TCP connection for *every* request/response. Very slow due to repeated TCP handshakes.
+* **HTTP/1.1:** The long-standing standard.
+    * **Persistent Connections (Keep-Alive):** Reuses one TCP connection for multiple requests, dramatically reducing latency.
+    * **Pipelining:** *Allowed* sending multiple requests before getting a response, but it was flawed by **Head-of-Line (HOL) Blocking**. If the first request was slow, all subsequent requests on that connection were blocked, even if the server could process them.
+* **HTTP/2.0:**
+    * **Binary Protocol:** No longer text-based; more efficient to parse.
+    * **Multiplexing:** The *true fix* for HOL blocking. It allows multiple requests and responses to be interleaved over a single TCP connection in parallel "streams."
+    * **TCP-level HOL Blocking:** HTTP/2 *still* suffers from TCP-level HOL blocking. If a single TCP packet is lost, *all* streams must wait for it to be re-transmitted, even if the other streams' data is fine.
+* **HTTP/3.0:**
+    * **Built on QUIC (over UDP):** Abandons TCP entirely.
+    * **Solves HOL Blocking:** Because QUIC handles streams independently at the application level, the loss of one packet *only* affects its specific stream. Other streams on the same connection can continue processing.
+
+---
+
+### ✉️ 4. HTTP Message Structure
+
+A message consists of a start-line, headers, a blank line, and an optional body.
+
+* **Request Start-Line:** `GET /users/123 HTTP/1.1` (Method, URL, Version)
+* **Response Start-Line:** `HTTP/1.1 200 OK` (Version, Status Code, Status Message)
+* **Headers:** Key-value metadata. (See section 5)
+* **Body:** The actual data (e.g., JSON payload, HTML document, image data). `GET` and `DELETE` requests typically do not have a body.
+
+---
+
+### 🏷️ 5. HTTP Headers
+
+Headers are the "remote control" of HTTP, providing context and instructions.
+
+* **Request Headers:** Sent by the client.
+    * `Host`: The domain name of the server (required in HTTP/1.1).
+    * `Accept`: What media types the client can understand (e.g., `application/json`, `text/html`).
+    * `Authorization`: Carries credentials (e.g., `Bearer <token>`).
+    * `User-Agent`: Identifies the client software (e.g., `Mozilla/5.0...`).
+    * `Cookie`: Sends cookies back to the server.
+* **Response Headers:** Sent by the server.
+    * `Content-Type`: What media type *is* this response (e.g., `application/json`).
+    * `Content-Length`: The size of the response body in bytes.
+    * `Set-Cookie`: Instructs the browser to store a cookie.
+    * `Server`: Identifies the server software (e.g., `nginx`).
+    * `Cache-Control`: Caching instructions.
+* **Security Headers:** Instructions for the browser to enhance security.
+    * `Strict-Transport-Security (HSTS)`: Tells the browser to *only* communicate with this domain over HTTPS.
+    * `Content-Security-Policy (CSP)`: A whitelist of sources (scripts, styles, images) that the browser is allowed to load, preventing XSS attacks.
+    * `X-Frame-Options`: Prevents "clickjacking" by blocking the page from being rendered in an `<iframe>` on another site.
+
+---
+
+### 🛠️ 6. HTTP Methods
+
+* **GET:** Retrieve a resource. Safe and idempotent.
+* **POST:** Create a new resource (e.g., submit a form, create a new user). Non-idempotent.
+* **PUT:** *Completely replace* an existing resource. If you send a `PUT` request with just a user's `name`, it will *delete* their `email` and `address` (unless the server is coded to prevent this). Idempotent.
+* **PATCH:** *Partially update* a resource. If you send a `PATCH` request with just a user's `name`, it will *only* change the name and leave all other fields as they were. This is generally preferred for updates.
+* **DELETE:** Delete a resource. Idempotent.
+* **OPTIONS:** Asks the server what methods and headers are allowed for a URL (used in
+    CORS).
+
+**Idempotency:**
+* **Idempotent:** Calling the request once has the same *end result* on the server as calling it 100 times. `GET`, `PUT`, `DELETE` are idempotent. (Deleting something 100 times still results in it being deleted).
+* **Non-Idempotent:** Every request changes the server's state. `POST` is the classic example. (Calling `POST /users` 100 times creates 100 new users).
+
+---
+
+### 🌐 7. CORS (Cross-Origin Resource Sharing)
+
+* **Problem (Same-Origin Policy - SOP):** A security feature in *browsers* that prevents a script loaded from `Origin A` (e.g., `my-app.com`) from reading data from `Origin B` (e.g., `api.my-app.com` or `api.partner.com`). An "origin" is the combination of **protocol, domain, and port**.
+* **Solution (CORS):** A mechanism where the *server* (`Origin B`) uses HTTP headers to tell the *browser* that it's safe to allow the *client* (`Origin A`) to access its data.
+
+**A. Simple Request Flow** (e.g., `GET` with no custom headers)
+1.  Client (`my-app.com`) sends `GET` request with an `Origin: my-app.com` header.
+2.  Server sees the `Origin` header, checks its allow-list.
+3.  Server responds with `Access-Control-Allow-Origin: my-app.com` (or `*` to allow all).
+4.  Browser sees this "permission slip" header and gives the data to the JavaScript code.
+
+**B. Pre-flighted Request Flow** (For "complex" requests, e.g., `PUT`, `DELETE`, or with `Authorization` or `Content-Type: application/json` headers)
+
+1.  **Pre-flight Request:** The browser *first* sends an **`OPTIONS`** request to the resource URL.
+    * This request *asks for permission* by including headers like:
+        * `Access-Control-Request-Method: PUT`
+        * `Access-Control-Request-Headers: Authorization, Content-Type`
+2.  **Pre-flight Response:** The server checks if this method and these headers are allowed for that origin.
+    * It responds with "permission slip" headers:
+        * `Access-Control-Allow-Origin: my-app.com`
+        * `Access-Control-Allow-Methods: GET, PUT, POST, DELETE`
+        * `Access-Control-Allow-Headers: Authorization, Content-Type`
+        * `Access-Control-Max-Age: 86400` (Tells the browser to cache this permission for 24 hours).
+3.  **Actual Request:** If the `OPTIONS` response grants permission, the browser *then* sends the *actual* `PUT` request with the `Authorization` header. If permission was denied, the `PUT` request is never sent, and the browser throws a CORS error.
+
+---
+
+### 🚦 8. HTTP Response Status Codes
+
+* **2xx (Success):**
+    * `200 OK`: Standard success.
+    * `201 Created`: A new resource was created (e.g., after a `POST`).
+    * `204 No Content`: Success, but there's nothing to send back (e.g., after a `DELETE`).
+* **4xx (Client Error):**
+    * `400 Bad Request`: Generic "you messed up" error. Invalid JSON, missing parameters, etc.
+    * `401 Unauthorized`: You are not logged in. The request *lacks valid authentication*.
+    * `403 Forbidden`: You are logged in, but you *do not have permission* to access this specific resource (e.g., trying to view another user's private data).
+    * `404 Not Found`: The resource (URL) doesn't exist.
+    * `409 Conflict`: The request would create a duplicate resource (e.g., trying to create a user with an email that's already in use).
+    * `422 Unprocessable Entity`: The syntax is correct, but the server can't process the instructions (e.g., a form validation error like "email must be 10 characters long").
+* **5xx (Server Error):**
+    * `500 Internal Server Error`: A generic "we messed up" error. An unhandled exception in the code.
+    * `502 Bad Gateway`: (Common in microservices/proxies) The server (acting as a proxy) received an invalid response from an upstream server it was calling.
+    * `503 Service Unavailable`: The server is down (maintenance) or overloaded.
+
+---
+
+### 🗄️ 9. HTTP Caching
+
+* **Goal:** Avoid re-fetching data that hasn't changed.
+* **`Cache-Control` header:** Sent by the server. This gives *directives* to the browser.
+    * `Cache-Control: public, max-age=3600`: "This resource can be cached by anyone (browser, proxy) for 1 hour."
+    * `Cache-Control: private, max-age=3600`: "Only the end-user's browser can cache this (e.g., for private user data)."
+    * `Cache-Control: no-cache`: "You *must* re-validate with the server (using `ETag`) before using this cached version." (Confusing name, doesn't mean "don't cache"!)
+    * `Cache-Control: no-store`: "Do not cache this resource under any circumstances." (Used for bank-account info, etc.).
+* **Validation (The `ETag` Flow):**
+    
+    1.  **Request 1:** Client `GET /resource`.
+    2.  **Response 1:** Server sends `200 OK`, the data, and an `ETag: "abc123"` header (a "version hash" of the data).
+    3.  **Request 2 (after cache expires):** The browser sends a *conditional* request: `GET /resource` with an `If-None-Match: "abc123"` header.
+    4.  **Server Check:**
+        * **If data is unchanged:** The server's ETag for the resource *still* matches "abc123". It responds with **`304 Not Modified`** and an *empty body*. The browser uses its cached copy.
+        * **If data has changed:** The server's ETag is now "def456". It responds with **`200 OK`**, the *new data*, and the new `ETag: "def456"` header.
+
+---
+
+### 🚚 10. Large Data & Connections
+
+* **Persistent Connections (`Keep-Alive`):** The default in HTTP/1.1. Allows the TCP connection to stay open for multiple requests, avoiding handshake overhead. The `Connection: keep-alive` header ensures this behavior.
+* **Uploading Large Files (`multipart/form-data`):**
+    * Used by clients to send files.
+    * The `Content-Type: multipart/form-data` header is set, along with a `boundary` string.
+    * The request body is broken into parts (e.g., text fields, then the file data), separated by the boundary, allowing the server to stream and parse the file efficiently.
+* **Downloading Large Files (Chunked Transfer / Streams):**
+    * Used by servers to send a large response without knowing its total size beforehand (e.g., streaming a large report or video).
+    * The server sends `Transfer-Encoding: chunked`.
+    * The body is sent in a series of "chunks," each with its size. The client reassembles them.
+    * `text/event-stream` is a related concept for server-sent events (SSE), allowing a server to push updates to a client over a long-lived HTTP connection.
+
+---
+
+### 🔒 11. Security: SSL, TLS, and HTTPS
+
+* **SSL (Secure Sockets Layer):** The original, *outdated*, and insecure protocol.
+* **TLS (Transport Layer Security):** The modern, secure replacement for SSL. This is the cryptographic protocol that provides privacy and data integrity.
+* **HTTPS (HTTP Secure):** This is just **HTTP + TLS**. It's the same HTTP protocol (methods, headers) but wrapped in a secure, encrypted TLS layer.
+* **The TLS Handshake (Simplified):**
+    
+    1.  **Client Hello:** Client says, "Hi, I want to connect. I can use these encryption methods (cipher suites)."
+    2.  **Server Hello:** Server says, "OK, let's use *this* specific method."
+    3.  **Server Certificate:** Server presents its **SSL/TLS Certificate** and says, "Here's my ID card, signed by a **Certificate Authority (CA)** [like Verisign or Let's Encrypt] to prove I am who I say I am."
+    4.  **Client Verification:** The browser checks the certificate with the CA.
+    5.  **Key Exchange:** Client and server securely exchange cryptographic keys to be used for this session.
+    6.  **Encrypted Session:** All subsequent HTTP data is encrypted with these session keys.
+
+---
+
+### 💡 10 Key Interview Questions
+
+1.  **What does it mean for HTTP to be "stateless," and what techniques do we use to manage user sessions as a result?**
+    * *(Answer: Mention statelessness = no server memory. We use client-side storage like Cookies (for sessions) or Local Storage (for JWTs) and send that data (e.g., in `Cookie` or `Authorization` headers) with every request.)*
+
+2.  **Can you explain the difference between `PUT` and `PATCH`? Which one is idempotent?**
+    * *(Answer: `PUT` is for *full replacement* of a resource. `PATCH` is for *partial updates*. `PUT` is idempotent because sending the same full resource 10 times has the same end state. `PATCH` is *not* technically idempotent, though often implemented to be.)*
+
+3.  **What's the difference between a `401 Unauthorized` and a `403 Forbidden` response?**
+    * *(Answer: `401` means "you are not authenticated" (you need to log in). `403` means "you are authenticated, but you do not have permission* for this specific action" (you are logged in as a user, but trying to access admin-only data).)*
+
+4.  **Walk me through the CORS pre-flight request flow. Why and when does it happen?**
+    * *(Answer: It happens for "complex" requests (e.g., `PUT`, `DELETE`, or with `Authorization` / `application/json`). The browser *first* sends an `OPTIONS` request to ask for permission. If the server responds with the correct `Access-Control-Allow...` headers, the browser *then* sends the actual `PUT` request.)*
+
+5.  **What is Head-of-Line (HOL) blocking, and how did HTTP/2 and HTTP/3 address it?**
+    * *(Answer: In HTTP/1.1, a slow request blocks all others on the same connection. HTTP/2 fixed this with *multiplexing*, but still suffered from *TCP-level* HOL blocking. HTTP/3 fixes it completely by using *QUIC (over UDP)*, where streams are fully independent.)*
+
+6.  **How does HTTP caching work? Explain the roles of `ETag` and `Cache-Control`.**
+    * *(Answer: `Cache-Control` is the *directive* from the server telling the browser *how* and *for how long* to cache. `ETag` is a *validator* (a version hash). The browser sends the `ETag` back in an `If-None-Match` header to ask, "Has this changed?" If not, the server returns `304 Not Modified`.)*
+
+7.  **What is the Same-Origin Policy, and how does it relate to CORS?**
+    * *(Answer: SOP is a *browser* security feature that blocks scripts from one origin (domain) from reading data from another origin. CORS is the *server-side mechanism* to "poke a hole" in that policy, using headers to tell the browser which other origins are allowed.)*
+
+8.  **What's the purpose of the `Accept` header vs. the `Content-Type` header?**
+    * *(Answer: `Accept` is a *request* header sent by the client, saying "I can understand these formats" (e.g., `application/json`). `Content-Type` is a *response* header (or request header for `POST`/`PUT`) saying "This is the format of the data I'm *actually* sending" (e.g., `application/json`).)*
+
+9.  **How would you upload a large file to a server using HTTP?**
+    * *(Answer: Use a `POST` request with the `Content-Type: multipart/form-data`. This allows mixing text fields and file data, which is streamed to the server in parts, separated by a `boundary`.)*
+
+10. **What is HTTPS? Briefly describe what happens during the TLS handshake.**
+    * *(Answer: HTTPS is HTTP over an encrypted TLS connection. The handshake is how the client and server securely establish that connection. The client says hello, the server sends back its SSL/TLS certificate to prove its identity (verified by a CA), and then they securely exchange session keys to encrypt all future communication.)*
